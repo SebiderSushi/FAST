@@ -1,8 +1,12 @@
 package org.ligi.fast.settings;
 
+import android.annotation.TargetApi;
+import android.content.ContentProvider;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.preference.PreferenceManager;
+import android.provider.Settings;
 
 /**
  * Class to handle the Preferences
@@ -14,9 +18,11 @@ public class AndroidFASTSettings implements FASTSettings {
     public static final String DEFUAULT_ICONSIZE = "medium";
     public static final String DEFUAULT_ICON_RESOLUTION = "96";
     private final SharedPreferences mSharedPreferences;
+    private final ContentResolver mContentResolver;
 
     public AndroidFASTSettings(Context ctx) {
         mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(ctx);
+        mContentResolver = ctx.getContentResolver();
     }
 
     public boolean isLaunchSingleActivated() {
@@ -82,4 +88,34 @@ public class AndroidFASTSettings implements FASTSettings {
         return mSharedPreferences.getBoolean(KEY_SHOW_HIDDEN, false);
     }
 
+    //TODO: reword
+    /**
+     * Used to obtain a sequence number to be used with pm.getChangedPackages()
+     * Checks whether the device was rebooted since the last app start
+     * (technically, the last call of this method), initializes the knownSequenceNumber
+     * and updates the knownBootCount. If no initialisation is needed, the previously stored
+     *
+     * @return Either a sequence number previously stored using putSequenceNumber(int sequenceNumber)
+     *          or a freshly initialized as -1 indicating that a reboot was there
+     */
+    @TargetApi(26)
+    public int getSequenceNumber() {
+        int currentBootCount =
+                Settings.Global.getInt(mContentResolver, Settings.Global.BOOT_COUNT, 0);
+        int knownBootCount = mSharedPreferences.getInt(KEY_KNOWN_BOOT_COUNT, 0);
+        if (currentBootCount > knownBootCount) {
+            SharedPreferences.Editor mEditor = mSharedPreferences.edit();
+            mEditor.putInt(KEY_KNOWN_PM_SEQUENCE_NUMBER, DEFAULT_KNOWN_PM_SEQUENCE_NUMBER);
+            mEditor.putInt(KEY_KNOWN_BOOT_COUNT, currentBootCount);
+            mEditor.apply();
+        }
+        return mSharedPreferences.getInt(KEY_KNOWN_PM_SEQUENCE_NUMBER, DEFAULT_KNOWN_PM_SEQUENCE_NUMBER);
+    }
+
+    @TargetApi(26)
+    public void putSequenceNumber(int sequenceNumber) {
+        SharedPreferences.Editor mEditor = mSharedPreferences.edit();
+        mEditor.putInt(KEY_KNOWN_PM_SEQUENCE_NUMBER, sequenceNumber);
+        mEditor.apply();
+    }
 }

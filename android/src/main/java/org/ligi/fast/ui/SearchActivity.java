@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Build;
@@ -29,6 +30,7 @@ import org.ligi.axt.helpers.ViewHelper;
 import org.ligi.axt.simplifications.SimpleTextWatcher;
 import org.ligi.fast.App;
 import org.ligi.fast.R;
+import org.ligi.fast.background.AppInstallOrRemoveReceiver;
 import org.ligi.fast.background.BackgroundGatherAsyncTask;
 import org.ligi.fast.model.AppInfo;
 import org.ligi.fast.model.AppInfoList;
@@ -36,6 +38,7 @@ import org.ligi.fast.model.DynamicAppInfoList;
 import org.ligi.fast.util.AppInfoListStore;
 import org.ligi.tracedroid.sending.TraceDroidEmailSender;
 
+import java.lang.ref.WeakReference;
 import java.util.Locale;
 
 /**
@@ -43,13 +46,28 @@ import java.util.Locale;
  */
 public class SearchActivity extends Activity implements App.PackageChangedListener {
 
+    private AppInstallOrRemoveReceiver mAppReceiver;
     private DynamicAppInfoList appInfoList;
     private AppInfoAdapter adapter;
     private String oldSearch = "";
     private EditText searchQueryEditText;
     private GridView gridView;
+    private Context mContext;
 
     private AppInfoListStore appInfoListStore;
+
+    private static int getWidthByIconSize(String iconSize) {
+        switch (iconSize) {
+            case "tiny":
+                return R.dimen.cell_size_tiny;
+            case "small":
+                return R.dimen.cell_size_small;
+            case "large":
+                return R.dimen.cell_size_large;
+            default:
+                return R.dimen.cell_size;
+        }
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -65,10 +83,25 @@ public class SearchActivity extends Activity implements App.PackageChangedListen
 
         appInfoListStore = new AppInfoListStore(this);
 
-        final AppInfoList loadedAppInfoList = appInfoListStore.load();
+        AppInfoList loadedAppInfoList = appInfoListStore.load();
         appInfoList = new DynamicAppInfoList(loadedAppInfoList, App.getSettings());
 
         adapter = new AppInfoAdapter(this, appInfoList);
+        App.backingAppInfoList = new WeakReference<>(appInfoList.getBackingAppInfoList());
+
+        mContext = this;
+
+        // Since the BroadCastReceivers can't be registered in
+        // Manifest on Android 8 Oreo register them now at app start
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            //Register App Install Receiver
+            mAppReceiver = new AppInstallOrRemoveReceiver();
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(Intent.ACTION_PACKAGE_ADDED);
+            filter.addAction(Intent.ACTION_PACKAGE_REMOVED);
+            filter.addDataScheme("package");
+            mContext.registerReceiver(mAppReceiver, filter);
+        }
 
         configureAdapter();
 
@@ -111,11 +144,7 @@ public class SearchActivity extends Activity implements App.PackageChangedListen
             @Override
             public void onItemClick(AdapterView<?> arg0, View arg1, int pos,
                                     long arg3) {
-                try {
-                    startItemAtPos(pos);
-                } catch (ActivityNotFoundException e) {
-                    // e.g. uninstalled while app running - TODO should refresh list
-                }
+                startItemAtPos(pos);
             }
 
         });
@@ -138,12 +167,6 @@ public class SearchActivity extends Activity implements App.PackageChangedListen
 
         if (appInfoList.size() == 0) {
             startActivityForResult(new Intent(this, LoadingDialog.class), R.id.activityResultLoadingDialog);
-        } else { // the second time - we use the old index to be fast but
-            // regenerate in background to be recent
-
-            // Use the pkgAppsListTemp in order to update data from the saved file with recent
-            // call count information (seeing as we may not have saved it recently).
-            new BackgroundGatherAsyncTask(this, appInfoList).execute();
         }
 
         gridView.setAdapter(adapter);
@@ -181,7 +204,8 @@ public class SearchActivity extends Activity implements App.PackageChangedListen
             startActivity(intent);
         } catch (ActivityNotFoundException e) {
             e.printStackTrace();
-            Toast.makeText(this,"cannot start: " + e,Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "cannot start: " + e, Toast.LENGTH_LONG).show();
+            new BackgroundGatherAsyncTask(getApplicationContext()).execute();
         }
 
         if (Build.VERSION.SDK_INT > 18) {
@@ -190,11 +214,10 @@ public class SearchActivity extends Activity implements App.PackageChangedListen
         }
 
         if (App.getSettings().isFinishOnLaunchEnabled()) {
-            Log.i(App.LOG_TAG, "Finished early.");
+            Log.i(App.LOG_TAG, "Finished on launch.");
             finish();
         }
     }
-
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -222,19 +245,6 @@ public class SearchActivity extends Activity implements App.PackageChangedListen
         final String iconSize = App.getSettings().getIconSize();
 
         gridView.setColumnWidth((int) getResources().getDimension(getWidthByIconSize(iconSize)));
-    }
-
-    private static int getWidthByIconSize(String iconSize) {
-        switch (iconSize) {
-            case "tiny":
-                return R.dimen.cell_size_tiny;
-            case "small":
-                return R.dimen.cell_size_small;
-            case "large":
-                return R.dimen.cell_size_large;
-            default:
-                return R.dimen.cell_size;
-        }
     }
 
     private void dealWithUserPreferencesRegardingSoftKeyboard() {
@@ -310,9 +320,7 @@ public class SearchActivity extends Activity implements App.PackageChangedListen
 
     @Override
     public void onPackageChange(final AppInfoList newAppInfoList) {
-        // TODO we should also do a cleanup of cached icons here
         // we might not come from UI Thread
-
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -329,6 +337,14 @@ public class SearchActivity extends Activity implements App.PackageChangedListen
 
         App.packageChangedListener = null;
         super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        App.backingAppInfoList = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            mContext.unregisterReceiver(mAppReceiver);
     }
 
     public void addEntry(AppInfo new_entry) {

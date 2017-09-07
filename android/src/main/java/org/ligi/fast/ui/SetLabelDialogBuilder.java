@@ -80,6 +80,6 @@ class SetLabelDialogBuilder extends AlertDialog.Builder {
             }
         });
 
-        setNeutralButton(R.string.cancel, null);
+        setNeutralButton(android.R.string.cancel, null);
     }
 }
