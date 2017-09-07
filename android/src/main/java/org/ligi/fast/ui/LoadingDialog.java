@@ -34,7 +34,7 @@ public class LoadingDialog extends Activity {
         progressBar = (ProgressBar) findViewById(R.id.progress);
         setTitle(getString(R.string.loadingDialogTitle));
 
-        new BaseAppGatherAsyncTask(this) {
+        new BaseAppGatherAsyncTask(this.getApplicationContext()) {
 
             private int actAppIndex = 0;
 

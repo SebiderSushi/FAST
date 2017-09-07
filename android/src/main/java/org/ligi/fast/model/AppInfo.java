@@ -8,18 +8,22 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+
 import org.ligi.axt.helpers.ResolveInfoHelper;
+import org.ligi.fast.App;
 import org.ligi.fast.util.UmlautConverter;
 import org.ligi.tracedroid.logging.Log;
+
+import java.io.File;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /**
  * Class to Retrieve / Store Application Information needed by this App
  */
 public class AppInfo {
     private static final String SEPARATOR = ";;";
-
+    private final AppIconCache iconCache;
     private String label;
     private String alternateLabel;
     private String overrideLabel;
@@ -32,8 +36,6 @@ public class AppInfo {
     private boolean isValid = true;
     private int pinMode = 0;
     private int labelMode = 0;
-
-    private final AppIconCache iconCache;
 
     private AppInfo(Context ctx) {
         iconCache = new AppIconCache(ctx, this);
@@ -79,19 +81,19 @@ public class AppInfo {
         // init attributes
         label = new ResolveInfoHelper(ri).getLabelSafely(_ctx);
         label = label.replace("ά", "α")
-                     .replaceAll("έ", "ε")
-                     .replaceAll("ή", "η")
-                     .replaceAll("ί", "ι")
-                     .replaceAll("ό", "ο")
-                     .replaceAll("ύ", "υ")
-                     .replaceAll("ώ", "ω")
-                     .replaceAll("Ά", "Α")
-                     .replaceAll("Έ", "Ε")
-                     .replaceAll("Ή", "Η")
-                     .replaceAll("Ί", "Ι")
-                     .replaceAll("Ό", "Ο")
-                     .replaceAll("Ύ", "Υ")
-                     .replaceAll("Ώ", "Ω");
+                .replaceAll("έ", "ε")
+                .replaceAll("ή", "η")
+                .replaceAll("ί", "ι")
+                .replaceAll("ό", "ο")
+                .replaceAll("ύ", "υ")
+                .replaceAll("ώ", "ω")
+                .replaceAll("Ά", "Α")
+                .replaceAll("Έ", "Ε")
+                .replaceAll("Ή", "Η")
+                .replaceAll("Ί", "Ι")
+                .replaceAll("Ό", "Ο")
+                .replaceAll("Ύ", "Υ")
+                .replaceAll("Ώ", "Ω");
         if (ri.activityInfo != null) {
             packageName = ri.activityInfo.packageName;
             activityName = ri.activityInfo.name;
@@ -105,14 +107,14 @@ public class AppInfo {
 
         installTime = 0;
 
-        try {
-            final PackageInfo pi = pmManager.getPackageInfo(packageName, 0);
-            if (Build.VERSION.SDK_INT >= 9) {
+        if (Build.VERSION.SDK_INT >= 9) {
+            try {
+                final PackageInfo pi = pmManager.getPackageInfo(packageName, 0);
                 installTime = pi.lastUpdateTime;
+            } catch (NameNotFoundException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
             }
-        } catch (NameNotFoundException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
         }
 
 
@@ -183,6 +185,7 @@ public class AppInfo {
 
     /**
      * Please keep in mind that this might now return unexpected values
+     *
      * @return the user-set label if it is set, default otherwise
      */
     public String getDisplayLabel() {
@@ -197,16 +200,24 @@ public class AppInfo {
         return this.label;
     }
 
+    public void setLabel(String label) {
+        this.label = label;
+    }
+
     public int getCallCount() {
         return callCount;
+    }
+
+    public void setCallCount(int count) {
+        callCount = count;
     }
 
     public long getInstallTime() {
         return installTime;
     }
 
-    public void setCallCount(int count) {
-        callCount = count;
+    public void setInstallTime(long installTime) {
+        this.installTime = installTime;
     }
 
     public void incrementCallCount() {
@@ -223,6 +234,7 @@ public class AppInfo {
 
     /**
      * Please keep in mind that this might now return unexpected values
+     *
      * @return the user-set label if it is set, alternateLabel otherwise
      */
     public String getAlternateDisplayLabel() {
@@ -247,8 +259,7 @@ public class AppInfo {
         setCallCount(Math.max(localCallCount, remoteCallCount));
         if (appInfo.getPinMode() != 0) {
             setPinMode(appInfo.getPinMode());
-        }
-        else {
+        } else {
             setPinMode(getPinMode());
         }
 
@@ -283,5 +294,9 @@ public class AppInfo {
 
     public void setOverrideLabel(String label) {
         this.overrideLabel = label;
+    }
+
+    public File getIconCacheFile() {
+        return new File(App.getBaseDir() + "/" + this.hash + ".png");
     }
 }
