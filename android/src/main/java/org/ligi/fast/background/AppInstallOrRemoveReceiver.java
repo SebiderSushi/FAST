@@ -14,7 +14,6 @@ import org.ligi.fast.model.AppInfo;
 import org.ligi.fast.model.AppInfoList;
 import org.ligi.fast.util.AppInfoListStore;
 
-import java.io.File;
 import java.util.Iterator;
 import java.util.List;
 
@@ -45,7 +44,13 @@ public class AppInstallOrRemoveReceiver extends BroadcastReceiver {
 
         private void save(AppInfoList appInfoList) {
             if (App.packageChangedListener == null) {
-                mAppInfoListStore.save(appInfoList);
+                if (App.backingAppInfoList != null) {
+                    AppInfoList backingList = App.backingAppInfoList.get();
+                    backingList.clear();
+                    backingList.addAll(appInfoList);
+                } else {
+                    mAppInfoListStore.save(appInfoList);
+                }
             } else {
                 App.packageChangedListener.onPackageChange(appInfoList);
             }
@@ -69,6 +74,8 @@ public class AppInstallOrRemoveReceiver extends BroadcastReceiver {
             String packageName = data.getSchemeSpecificPart();
             String action = mIntent.getAction();
 
+            Log.d(App.LOG_TAG, "BroadcastReceiver: Action - " + action + "; Package - " + packageName);
+
             //TODO: When moving to MinApiLevel 14 or higher, refactor Intent.ACTION_PACKAGE_REMOVED
             // to Intent.ACTION_PACKAGE_FULLY_REMOVED and remove the following block
 
@@ -80,23 +87,26 @@ public class AppInstallOrRemoveReceiver extends BroadcastReceiver {
             // NOTE: This is only due to compatibility below API level 14
             // When using the Intent.ACTION_PACKAGE_FULLY_REMOVED instead of
             // Intent.ACTION_PACKAGE_REMOVED this is not necessary
-            boolean replacingFalse = mIntent.getBooleanExtra(Intent.EXTRA_REPLACING, false);
-            if (Intent.ACTION_PACKAGE_REMOVED.equals(action) && replacingFalse) return null;
+            boolean replacingDefaultFalse = mIntent.getBooleanExtra(Intent.EXTRA_REPLACING, false);
+            if (Intent.ACTION_PACKAGE_REMOVED.equals(action) && replacingDefaultFalse) return null;
 
             mAppInfoListStore = new AppInfoListStore(mContext);
-            AppInfoList appInfoList = null;
+            AppInfoList appInfoList;
             if (App.backingAppInfoList != null) {
-                appInfoList = App.backingAppInfoList.get();
-            }
-            if (appInfoList == null) {
+                appInfoList = new AppInfoList();
+                appInfoList.addAll(App.backingAppInfoList.get());
+                if (appInfoList.size() == 0) {
+                    appInfoList = mAppInfoListStore.load();
+                }
+            } else {
                 appInfoList = mAppInfoListStore.load();
             }
 
             // Check the package is newly installed or not
             // getBooleanExtra defaultValue is true so that in case of doubt the
             // presence of old information is checked anyway
-            boolean replacingTrue = mIntent.getBooleanExtra(Intent.EXTRA_REPLACING, true);
-            boolean newInstall = Intent.ACTION_PACKAGE_ADDED.equals(action) && !replacingTrue;
+            boolean replacingDefaultTrue = mIntent.getBooleanExtra(Intent.EXTRA_REPLACING, true);
+            boolean newInstall = Intent.ACTION_PACKAGE_ADDED.equals(action) && !replacingDefaultTrue;
             AppInfoList matchedAppInfoList = new AppInfoList();
             // If this is not a new install, i.e. update or uninstall, then collect the existing records
             // already held about this app into matchedAppInfoList and remove them from the main list.
@@ -136,6 +146,9 @@ public class AppInstallOrRemoveReceiver extends BroadcastReceiver {
                 // If there are no activities that should be displayed on the launcher we can quit here
                 if (resolveInfoList.size() == 0 && homeInfoList.size() == 0) {
                     save(appInfoList);
+                    long end = System.currentTimeMillis();
+                    long duration = end - start;
+                    Log.d(App.LOG_TAG, "BroadcastReceiver ran short " + duration + "ms.");
                     return null;
                 }
 

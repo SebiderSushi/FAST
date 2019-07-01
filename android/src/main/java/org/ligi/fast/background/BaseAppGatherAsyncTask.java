@@ -45,7 +45,8 @@ public class BaseAppGatherAsyncTask extends AsyncTask<Void, AppInfo, Void> {
 
         start = System.currentTimeMillis();
         if (App.backingAppInfoList != null) {
-            this.oldAppList = App.backingAppInfoList.get();
+            this.oldAppList = new AppInfoList();
+            this.oldAppList.addAll(App.backingAppInfoList.get());
         } else {
             this.oldAppList = new AppInfoListStore(ctx).load();
         }

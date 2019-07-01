@@ -3,7 +3,6 @@ package org.ligi.fast.background;
 import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ChangedPackages;
 import android.content.pm.ResolveInfo;
 import android.os.AsyncTask;
 import android.util.Log;
@@ -25,7 +24,13 @@ public class ChangedPackagesAsyncTask extends AsyncTask<Void, Void, Void> {
 
     private void save(AppInfoList appInfoList) {
         if (App.packageChangedListener == null) {
-            mAppInfoListStore.save(appInfoList);
+            if (App.backingAppInfoList != null) {
+                AppInfoList backingList = App.backingAppInfoList.get();
+                backingList.clear();
+                backingList.addAll(appInfoList);
+            } else {
+                mAppInfoListStore.save(appInfoList);
+            }
         } else {
             App.packageChangedListener.onPackageChange(appInfoList);
         }
@@ -45,13 +50,18 @@ public class ChangedPackagesAsyncTask extends AsyncTask<Void, Void, Void> {
         mAppInfoListStore = new AppInfoListStore(mContext);
         AppInfoList appInfoList = null;
         if (App.backingAppInfoList != null) {
-            appInfoList = App.backingAppInfoList.get();
-        }
-        if (appInfoList == null) {
+            appInfoList = new AppInfoList();
+            appInfoList.addAll(App.backingAppInfoList.get());
+            if (appInfoList.size() == 0) {
+                appInfoList = mAppInfoListStore.load();
+            }
+        } else {
             appInfoList = mAppInfoListStore.load();
         }
 
         AppInfoList matchedAppInfoList = new AppInfoList();
+        List<ResolveInfo> launcherResolveInfoList = new ArrayList<>();
+        List<ResolveInfo> homeResolveInfoList = new ArrayList<>();
         // Collect the existing records already held about this app
         // into matchedAppInfoList and remove them from the main list.
         // That way if uninstalling an app the main list is already updated after this step.
@@ -60,6 +70,11 @@ public class ChangedPackagesAsyncTask extends AsyncTask<Void, Void, Void> {
         // After this all old info & icons of the affected package should be cleaned up.
         for (String packageName : mChangedPackageNames) {
             Log.d(App.LOG_TAG, "changed: " + packageName);
+
+            // ignore self
+            if (mContext.getPackageName().equals(packageName)) continue;
+
+
             for (Iterator<AppInfo> iterator = appInfoList.iterator(); iterator.hasNext(); ) {
                 AppInfo appInfo = iterator.next();
                 if (appInfo.getPackageName().equals(packageName)) {
@@ -67,31 +82,31 @@ public class ChangedPackagesAsyncTask extends AsyncTask<Void, Void, Void> {
                     iterator.remove();
                 }
             }
-        }
 
-        List<ResolveInfo> resolveInfoList = new ArrayList<>();
-        List<ResolveInfo> homeInfoList = new ArrayList<>();
-        for (String packageName : mChangedPackageNames) {
+
             Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
             launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
             launcherIntent.setPackage(packageName);
-            resolveInfoList.addAll(mContext.getPackageManager().queryIntentActivities(launcherIntent, 0));
+            launcherResolveInfoList.addAll(mContext.getPackageManager().queryIntentActivities(launcherIntent, 0));
 
             Intent homeIntent = new Intent(Intent.ACTION_MAIN);
             homeIntent.addCategory(Intent.CATEGORY_HOME);
             homeIntent.setPackage(packageName);
-            homeInfoList.addAll(mContext.getPackageManager().queryIntentActivities(homeIntent, 0));
+            homeResolveInfoList.addAll(mContext.getPackageManager().queryIntentActivities(homeIntent, 0));
         }
 
         // If there are no activities that should be displayed on the launcher we can quit here
-        if (resolveInfoList.size() == 0 && homeInfoList.size() == 0) {
-            save(appInfoList);
+        if (launcherResolveInfoList.size() == 0 && homeResolveInfoList.size() == 0) {
+            save(appInfoList); // Saving here to apply removed entries
+            long end = System.currentTimeMillis();
+            long duration = end - start;
+            Log.d(App.LOG_TAG, "BroadcastReceiver ran " + duration + "ms.");
             return null;
         }
 
         // Deduplicate Resolve Info of activities with both categories - like SearchActivity (see manifest)
-        for (ResolveInfo info : resolveInfoList) {
-            Iterator<ResolveInfo> homeIterator = homeInfoList.iterator();
+        for (ResolveInfo info : launcherResolveInfoList) {
+            Iterator<ResolveInfo> homeIterator = homeResolveInfoList.iterator();
             while (homeIterator.hasNext()) {
                 ResolveInfo homeInfo = homeIterator.next();
                 if (homeInfo.activityInfo.name.equals(info.activityInfo.name)) {
@@ -103,14 +118,14 @@ public class ChangedPackagesAsyncTask extends AsyncTask<Void, Void, Void> {
                 break;
             }
         }
-        resolveInfoList.addAll(homeInfoList);
+        launcherResolveInfoList.addAll(homeResolveInfoList);
 
         if (matchedAppInfoList.size() == 0) { // New app, simple adding
-            for (ResolveInfo info : resolveInfoList) {
+            for (ResolveInfo info : launcherResolveInfoList) {
                 appInfoList.add(new AppInfo(mContext, info));
             }
         } else { // Update, merge data
-            for (ResolveInfo info : resolveInfoList) {
+            for (ResolveInfo info : launcherResolveInfoList) {
                 AppInfo newAppInfo = new AppInfo(mContext, info);
 
                 Iterator<AppInfo> oldInfoIterator = matchedAppInfoList.iterator();
