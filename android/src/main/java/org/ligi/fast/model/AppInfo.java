@@ -2,12 +2,15 @@ package org.ligi.fast.model;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+
+import java.io.File;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import org.ligi.axt.helpers.ResolveInfoHelper;
@@ -101,18 +104,20 @@ public class AppInfo {
         }
         callCount = 0;
 
-        final PackageManager pmManager = _ctx.getPackageManager();
-
         installTime = 0;
 
         try {
-            final PackageInfo pi = pmManager.getPackageInfo(packageName, 0);
-            if (Build.VERSION.SDK_INT >= 9) {
+            PackageManager pm = _ctx.getPackageManager();
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.GINGERBREAD) {
+                ApplicationInfo appInfo = pm.getApplicationInfo(packageName, 0);
+                String appFile = appInfo.sourceDir;
+                installTime = new File(appFile).lastModified();
+            } else {
+                PackageInfo pi = pm.getPackageInfo(packageName, 0);
                 installTime = pi.lastUpdateTime;
             }
         } catch (NameNotFoundException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
+            isValid = false; // Package does not exist
         }
 
 
